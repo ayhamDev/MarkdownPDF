@@ -273,7 +273,7 @@ export default function App() {
 
   return (
     <div 
-      className="h-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden"
+      className="h-screen print:h-auto flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden print:overflow-visible print:block"
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
       onDrop={handleDrop}
@@ -298,6 +298,10 @@ export default function App() {
           @page {
             size: ${activeProject.settings.paperFormat === 'letter' ? 'letter' : activeProject.settings.paperFormat === 'legal' ? 'legal' : 'A4'} portrait;
             margin: 0;
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
           }
           body {
             background-color: ${activeProject.settings.theme === 'dark' ? '#0f172a' : '#ffffff'} !important;
