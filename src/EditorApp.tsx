@@ -27,7 +27,6 @@ import {
   Heart
 } from 'lucide-react';
 import { cn } from './lib/utils';
-import { LandingPage } from './LandingPage';
 
 // --- Local Hook ---
 function useLocalStorage<T>(key: string, initialValue: T) {
@@ -188,17 +187,7 @@ const DIMENSIONS = {
   legal: { w: 816, h: 1344 }
 };
 
-export default function App() {
-  const [isStarted, setIsStarted] = useState(false);
-
-  if (!isStarted) {
-    return <LandingPage onStart={() => setIsStarted(true)} />;
-  }
-
-  return <EditorApp />;
-}
-
-function EditorApp() {
+export function EditorApp() {
   const [projects, setProjects] = useLocalStorage<Project[]>('md2pdf_projects', [
     {
       id: 'default',

@@ -9,14 +9,13 @@ import {
   Linkedin, 
   CheckCircle2,
   Coffee,
-  Heart
+  Heart,
+  Sparkles
 } from 'lucide-react';
 
-interface LandingPageProps {
-  onStart: () => void;
-}
+import { Link } from '@tanstack/react-router';
 
-export function LandingPage({ onStart }: LandingPageProps) {
+export function LandingPage() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100 flex flex-col">
       {/* Header Support */}
@@ -38,7 +37,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
           <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-50" />
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-sm font-medium mb-8 border border-blue-100">
-              <SparklesIcon className="w-4 h-4" /> 
+              <Sparkles className="w-4 h-4" /> 
               <span>Markdown to PDF</span>
             </div>
             <h1 className="text-5xl lg:text-7xl font-bold tracking-tight text-slate-900 mb-8 leading-[1.1]">
@@ -51,13 +50,13 @@ export function LandingPage({ onStart }: LandingPageProps) {
               Write in a powerful Monaco editor, apply native styling hooks, customize typography, and export directly to flawless vector PDFs using your browser engine.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button 
-                onClick={onStart}
+              <Link 
+                to="/editor"
                 className="group w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-lg transition-all shadow-lg shadow-blue-200 active:scale-95"
               >
                 Start Writing
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </button>
+              </Link>
               <a 
                 href="#features"
                 className="w-full sm:w-auto px-8 py-4 bg-white text-slate-700 hover:text-slate-900 font-medium text-lg rounded-xl transition-all shadow-sm border border-slate-200 hover:border-slate-300"
@@ -116,12 +115,12 @@ export function LandingPage({ onStart }: LandingPageProps) {
                 <h3 className="text-2xl font-bold text-white mb-2">Ready to create a document?</h3>
                 <p className="text-slate-400">Everything is automatically saved to your local storage.</p>
               </div>
-              <button 
-                onClick={onStart}
+              <Link 
+                to="/editor"
                 className="shrink-0 px-8 py-3.5 bg-white text-slate-900 hover:bg-slate-50 rounded-xl font-medium transition-colors shadow-sm active:scale-95 flex items-center gap-2"
               >
                 Launch App
-              </button>
+              </Link>
             </div>
           </div>
         </section>
@@ -154,7 +153,7 @@ export function LandingPage({ onStart }: LandingPageProps) {
               target="_blank" 
               rel="noopener noreferrer"
               className="p-2 text-slate-400 hover:text-blue-700 hover:bg-blue-50 rounded-full transition-all"
-              title="LinkedIn"
+              title="Linkedin"
             >
               <Linkedin className="w-5 h-5" />
             </a>
@@ -162,17 +161,5 @@ export function LandingPage({ onStart }: LandingPageProps) {
         </div>
       </footer>
     </div>
-  );
-}
-
-function SparklesIcon(props: any) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-      <path d="M5 3v4" />
-      <path d="M19 17v4" />
-      <path d="M3 5h4" />
-      <path d="M17 19h4" />
-    </svg>
   );
 }
