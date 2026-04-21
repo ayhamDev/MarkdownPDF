@@ -14,6 +14,8 @@
   html, body {
     height: auto !important;
     overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   
   body {
@@ -29,8 +31,15 @@
     display: block !important;
   }
 
+  .print-page {
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
   @page {
-    margin: 20mm;
+    margin: 0;
+    size: auto;
   }
 }
 

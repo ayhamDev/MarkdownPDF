@@ -1409,31 +1409,40 @@ export function EditorApp() {
       )}
 
       {/* Native Browser Print Engine Payload */}
-      <div className="hidden print:block w-full text-left bg-transparent">
-        {activeProject.pages.map((p, index) => (
-          <div 
-            key={p.id} 
-            className={cn(
-               "custom-prose-styling w-full w-max-[none]",
-               THEMES[activeProject.settings.theme]
-            )}
-            style={{ 
-               padding: `${activeProject.settings.padding}px`, 
-               pageBreakAfter: index === activeProject.pages.length - 1 ? 'auto' : 'always',
-               minHeight: '100vh',
-               boxSizing: 'border-box'
-            }}
-          >
-            <div className="prose prose-sm w-full max-w-none">
-              <ReactMarkdown 
-                 remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
-                 rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
-              >
-                {processMarkdown(p.content)}
-              </ReactMarkdown>
+      <div className="hidden print:block w-full text-left bg-white">
+        {activeProject.pages.map((p, index) => {
+          const format = activeProject.settings.paperFormat;
+          const width = format === 'a4' ? '210mm' : '8.5in';
+          const height = format === 'a4' ? '297mm' : (format === 'letter' ? '11in' : '14in');
+          
+          return (
+            <div 
+              key={p.id} 
+              className={cn(
+                 "print-page relative",
+                 THEMES[activeProject.settings.theme]
+              )}
+              style={{ 
+                 width: width,
+                 height: height,
+                 padding: `${activeProject.settings.padding}px`, 
+                 breakAfter: index === activeProject.pages.length - 1 ? 'auto' : 'page',
+                 pageBreakAfter: index === activeProject.pages.length - 1 ? 'auto' : 'always',
+                 boxSizing: 'border-box',
+                 overflow: 'hidden'
+              }}
+            >
+              <div className="prose prose-sm w-full max-w-none">
+                <ReactMarkdown 
+                   remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
+                   rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+                >
+                  {processMarkdown(p.content)}
+                </ReactMarkdown>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
