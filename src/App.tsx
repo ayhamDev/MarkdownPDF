@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import Editor from '@monaco-editor/react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
@@ -615,13 +616,25 @@ export default function App() {
         </aside>
 
         {/* Editor Pane */}
-        <section className="w-full lg:w-[45%] xl:w-1/3 flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shrink-0 z-0">
-          <textarea
-            className="flex-1 p-6 font-mono text-sm leading-relaxed text-slate-700 overflow-auto outline-none selection:bg-blue-100 bg-transparent resize-none custom-scrollbar"
+        <section className="w-full lg:w-[45%] xl:w-1/3 flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shrink-0 z-0 h-[50vh] lg:h-auto">
+          <Editor
+            height="100%"
+            language="markdown"
+            theme="vs-light"
             value={editorContent}
-            onChange={(e) => handleContentChange(e.target.value)}
-            placeholder="Type your markdown here... Drop a .md file to replace content! Supports ==highlights==, Code blocks, and more."
-            spellCheck="false"
+            onChange={(value) => handleContentChange(value || '')}
+            options={{
+              minimap: { enabled: false },
+              wordWrap: 'on',
+              lineNumbers: 'off',
+              folding: false,
+              padding: { top: 24, bottom: 24 },
+              fontSize: 14,
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+              quickSuggestions: true,
+              snippetSuggestions: 'inline',
+              suggestOnTriggerCharacters: true
+            }}
           />
         </section>
 
