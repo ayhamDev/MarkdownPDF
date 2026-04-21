@@ -46,7 +46,7 @@ function useLocalStorage<T>(key: string, initialValue: T) {
 }
 
 // --- Types ---
-export type Theme = 'sleek' | 'classic' | 'modern' | 'dark';
+export type Theme = 'sleek' | 'classic' | 'modern' | 'dark' | 'rose' | 'ocean' | 'brutalist';
 
 export interface DocumentSettings {
   fontFamily: string;
@@ -100,8 +100,22 @@ const THEMES: Record<Theme, string> = {
   sleek: 'prose-slate prose-headings:font-semibold prose-a:text-blue-600',
   classic: 'prose-stone prose-headings:font-serif prose-p:font-serif prose-a:text-amber-700',
   modern: 'prose-zinc prose-headings:font-black prose-a:text-emerald-600 tracking-tight',
-  dark: 'prose-invert prose-headings:font-semibold prose-a:text-indigo-400 !bg-slate-900 border-none'
+  dark: 'prose-invert prose-headings:font-semibold prose-a:text-indigo-400 !bg-slate-900 border-none',
+  rose: 'prose-rose prose-headings:font-medium prose-headings:text-rose-900 prose-a:text-rose-600',
+  ocean: 'prose-cyan prose-headings:font-bold prose-headings:text-cyan-800 prose-a:text-cyan-600',
+  brutalist: 'prose-stone prose-headings:font-black prose-headings:uppercase prose-a:text-black prose-a:bg-yellow-300'
 };
+
+const FONTS = [
+  { name: 'Inter (Default)', value: '"Inter", system-ui, sans-serif' },
+  { name: 'Roboto', value: '"Roboto", sans-serif' },
+  { name: 'Outfit', value: '"Outfit", sans-serif' },
+  { name: 'Space Grotesk', value: '"Space Grotesk", sans-serif' },
+  { name: 'Playfair Display', value: '"Playfair Display", serif' },
+  { name: 'Merriweather', value: '"Merriweather", serif' },
+  { name: 'JetBrains Mono', value: '"JetBrains Mono", monospace' },
+  { name: 'Fira Code', value: '"Fira Code", monospace' },
+];
 
 const DIMENSIONS = {
   a4: { w: 794, h: 1123 },
@@ -125,7 +139,6 @@ export default function App() {
   const [activePageId, setActivePageId] = useState<string>('');
   
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showPrintModal, setShowPrintModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -257,12 +270,8 @@ export default function App() {
     setTimeout(() => {
       try {
         window.print();
-        // Often in sandboxed iframes (like the preview window), window.print() gets silently blocked.
-        // We will show a modal directing them anyway just in case it was blocked silently.
-        setShowPrintModal(true);
       } catch (e) {
         console.error("Print restricted:", e);
-        setShowPrintModal(true);
       } finally {
         setIsGenerating(false);
       }
@@ -313,68 +322,12 @@ export default function App() {
         }
       `}</style>
 
-      {/* Overlays */}
+      {/* Fixed Overlays */}
       {isDragging && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-600/90 backdrop-blur-sm">
           <div className="text-center text-white pointer-events-none">
             <UploadCloud className="w-32 h-32 mx-auto mb-6 opacity-90" />
             <h2 className="text-4xl font-bold tracking-tight">Drop Markdown to Replace Page</h2>
-          </div>
-        </div>
-      )}
-
-      {/* Dynamic Settings and Modals Overlay */}
-      {showPrintModal && (
-        <div className="no-print fixed inset-0 bg-slate-900/40 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden relative">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                <Printer className="w-5 h-5 text-blue-600" />
-                Native PDF Export
-              </h3>
-              <button 
-                onClick={() => setShowPrintModal(false)}
-                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1 rounded-md transition-colors"
-                title="Close Modal"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="p-6 text-left">
-              <p className="text-slate-600 text-sm mb-4 leading-relaxed">
-                To guarantee vector-sharp, highlightable, perfectly-styled native PDFs, we use your device's built-in Print Rendering Engine.
-              </p>
-              
-              <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm mb-5 border border-blue-100 font-medium tracking-tight">
-                When the Print Dialog opens, simply change your destination to <strong className="bg-blue-100 px-1 rounded">Save as PDF</strong>.
-              </div>
-
-              <div className="bg-amber-50 text-amber-800 p-4 rounded-lg text-sm border border-amber-100 leading-relaxed max-w-full">
-                <strong className="block mb-1 font-semibold text-amber-900">Did the dialog not appear?</strong>
-                If you're inside an AI sandbox preview window, modern browsers intentionally block the silent popup dialog for safety.
-                <br /><br />
-                Please click the <strong>"Open app in new tab"</strong> icon at the top right header of your screen to run the app natively!
-              </div>
-            </div>
-            
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-              <button
-                onClick={() => setShowPrintModal(false)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-medium rounded-lg transition-colors"
-              >
-                Got it
-              </button>
-              <button
-                onClick={() => {
-                   setShowPrintModal(false);
-                   window.print();
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-              >
-                Try Again
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -413,13 +366,15 @@ export default function App() {
 
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase text-slate-500">Typography Settings</label>
-                <input 
-                  type="text" 
+                <select 
                   value={activeProject.settings.fontFamily}
                   onChange={(e) => updateSettings({ fontFamily: e.target.value })}
-                  className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 font-mono"
-                  placeholder="e.g. 'Inter, sans-serif'"
-                />
+                  className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 appearance-none bg-white"
+                >
+                  {FONTS.map(f => (
+                    <option key={f.name} value={f.value}>{f.name}</option>
+                  ))}
+                </select>
                 
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div>
