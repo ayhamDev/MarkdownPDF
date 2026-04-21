@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
 import 'highlight.js/styles/vs2015.css';
+import 'katex/dist/katex.min.css';
 import {
   UploadCloud,
   Trash2,
@@ -46,7 +50,7 @@ function useLocalStorage<T>(key: string, initialValue: T) {
 }
 
 // --- Types ---
-export type Theme = 'sleek' | 'classic' | 'modern' | 'dark' | 'rose' | 'ocean' | 'brutalist';
+export type Theme = 'sleek' | 'neutral' | 'vibrant' | 'dark' | 'midnight' | 'dracula' | 'terminal';
 
 export interface DocumentSettings {
   fontFamily: string;
@@ -85,6 +89,31 @@ function calculateFactorial(n) {
 console.log(calculateFactorial(5)); // Outputs: 120
 \`\`\`
 
+## Advanced Elements
+
+We now support **Tables**, **Checklists**, and **Math Equations!**
+
+### Tables
+| Feature | Supported | Description |
+| :--- | :---: | :--- |
+| Tables | ✅ | Markdown tables via GFM |
+| Task Lists | ✅ | Checkboxes for lists |
+| Math (KaTeX) | ✅ | Blocks and inline math |
+
+### Checklists
+- [x] Integrate \`remark-gfm\`
+- [x] Integrate \`rehype-katex\`
+- [x] Configure Tailwind Prose
+- [ ] Write a masterpiece
+
+### Math Equations (KaTeX)
+Here is an inline equation: $E = mc^2$
+
+And a block equation:
+$$
+\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}
+$$
+
 > Use the **Settings** icon in the top right to change paper formats, adjust document paddings, set font sizes, and explore multiple design themes!`;
 
 const DEFAULT_SETTINGS: DocumentSettings = {
@@ -97,13 +126,25 @@ const DEFAULT_SETTINGS: DocumentSettings = {
 };
 
 const THEMES: Record<Theme, string> = {
-  sleek: 'prose-slate prose-headings:font-semibold prose-a:text-blue-600',
-  classic: 'prose-stone prose-headings:font-serif prose-p:font-serif prose-a:text-amber-700',
-  modern: 'prose-zinc prose-headings:font-black prose-a:text-emerald-600 tracking-tight',
-  dark: 'prose-invert prose-headings:font-semibold prose-a:text-indigo-400 !bg-slate-900 border-none',
-  rose: 'prose-rose prose-headings:font-medium prose-headings:text-rose-900 prose-a:text-rose-600',
-  ocean: 'prose-cyan prose-headings:font-bold prose-headings:text-cyan-800 prose-a:text-cyan-600',
-  brutalist: 'prose-stone prose-headings:font-black prose-headings:uppercase prose-a:text-black prose-a:bg-yellow-300'
+  sleek: 'prose-slate prose-a:text-blue-600',
+  neutral: 'prose-stone prose-a:text-amber-700',
+  vibrant: 'prose-rose prose-a:text-rose-600',
+  dark: 'prose-invert prose-slate prose-a:text-blue-400',
+  midnight: 'prose-invert prose-indigo prose-a:text-indigo-400',
+  dracula: 'prose-invert prose-purple prose-a:text-pink-500',
+  terminal: 'prose-invert prose-emerald prose-a:text-emerald-400'
+};
+
+const DARK_THEMES: Theme[] = ['dark', 'midnight', 'dracula', 'terminal'];
+
+const BACKGROUNDS: Record<Theme, { hex: string, tw: string }> = {
+  sleek: { hex: '#ffffff', tw: 'bg-white' },
+  neutral: { hex: '#fafaf9', tw: 'bg-stone-50' },
+  vibrant: { hex: '#fff1f2', tw: 'bg-rose-50' },
+  dark: { hex: '#0f172a', tw: 'bg-slate-900 border border-slate-700' },
+  midnight: { hex: '#1e1b4b', tw: 'bg-indigo-950 border border-indigo-800' },
+  dracula: { hex: '#282a36', tw: 'bg-[#282a36] border border-purple-900' },
+  terminal: { hex: '#000000', tw: 'bg-black border border-emerald-900' }
 };
 
 const FONTS = [
@@ -280,6 +321,8 @@ export default function App() {
 
   const d = DIMENSIONS[activeProject.settings.paperFormat] || DIMENSIONS.a4;
 
+  const isDark = (theme: Theme) => DARK_THEMES.includes(theme);
+
   return (
     <div 
       className="h-screen print:h-auto flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden print:overflow-visible print:block"
@@ -293,14 +336,14 @@ export default function App() {
           font-size: ${activeProject.settings.fontSize}px !important;
           line-height: ${activeProject.settings.lineHeight} !important;
           max-width: none !important;
-          color: ${activeProject.settings.theme === 'dark' ? '#f8fafc' : 'inherit'};
+          color: ${isDark(activeProject.settings.theme) ? '#f8fafc' : 'inherit'};
         }
         .custom-prose-styling .prose h1,
         .custom-prose-styling .prose h2,
         .custom-prose-styling .prose h3,
         .custom-prose-styling .prose h4 {
           font-family: inherit !important;
-          color: ${activeProject.settings.theme === 'dark' ? '#fff' : 'inherit'};
+          color: ${isDark(activeProject.settings.theme) ? '#fff' : 'inherit'};
         }
         
         @media print {
@@ -313,11 +356,11 @@ export default function App() {
             overflow: visible !important;
           }
           body {
-            background-color: ${activeProject.settings.theme === 'dark' ? '#0f172a' : '#ffffff'} !important;
+            background-color: ${BACKGROUNDS[activeProject.settings.theme].hex} !important;
           }
           /* Ensure explicit text color prints even against background engine stripped contexts */
           .prose {
-             color: ${activeProject.settings.theme === 'dark' ? '#f8fafc' : '#1e293b'} !important;
+             color: ${isDark(activeProject.settings.theme) ? '#f8fafc' : '#1e293b'} !important;
           }
         }
       `}</style>
@@ -602,7 +645,7 @@ export default function App() {
                 className={cn(
                   "pdf-page-render shadow-md bg-clip-padding flex-shrink-0 relative transition-all duration-200 cursor-pointer overflow-hidden group custom-prose-styling",
                   activePageId === p.id && !isGenerating ? "ring-4 ring-blue-500 shadow-xl" : "hover:ring-2 hover:ring-blue-300 opacity-90 hover:opacity-100",
-                  activeProject.settings.theme === 'dark' ? 'bg-slate-900 border border-slate-700' : 'bg-white'
+                  BACKGROUNDS[activeProject.settings.theme].tw
                 )}
                 style={{ width: `${d.w}px`, height: `${d.h}px` }}
               >
@@ -612,8 +655,8 @@ export default function App() {
                 >
                   <div className={cn("prose prose-sm", THEMES[activeProject.settings.theme])}>
                     <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]} 
-                      rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
+                      rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
                     >
                       {processMarkdown(p.content)}
                     </ReactMarkdown>
@@ -644,8 +687,8 @@ export default function App() {
           >
             <div className="prose prose-sm w-full max-w-none">
               <ReactMarkdown 
-                 remarkPlugins={[remarkGfm]} 
-                 rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                 remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
+                 rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
               >
                 {processMarkdown(p.content)}
               </ReactMarkdown>
