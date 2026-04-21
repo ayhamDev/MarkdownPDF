@@ -11,11 +11,17 @@
 }
 
 @media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   html, body {
-    height: auto !important;
-    overflow: visible !important;
+    height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: visible !important;
+    background-color: white !important;
   }
   
   body {
@@ -33,13 +39,20 @@
 
   .print-page {
     margin: 0 !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
+    overflow: hidden !important;
+    display: block !important;
+    position: relative !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   @page {
-    margin: 0;
-    size: auto;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
   }
 }
 

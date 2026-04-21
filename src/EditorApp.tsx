@@ -1409,17 +1409,17 @@ export function EditorApp() {
       )}
 
       {/* Native Browser Print Engine Payload */}
-      <div className="hidden print:block w-full text-left bg-white">
+      <div className="hidden print:block w-full text-left bg-white p-0 m-0 border-none outline-none overflow-visible">
         {activeProject.pages.map((p, index) => {
           const format = activeProject.settings.paperFormat;
           const width = format === 'a4' ? '210mm' : '8.5in';
-          const height = format === 'a4' ? '297mm' : (format === 'letter' ? '11in' : '14in');
+          const height = format === 'a4' ? '296.8mm' : (format === 'letter' ? '10.9in' : '13.9in');
           
           return (
             <div 
               key={p.id} 
               className={cn(
-                 "print-page relative",
+                 "print-page",
                  THEMES[activeProject.settings.theme]
               )}
               style={{ 
@@ -1427,9 +1427,7 @@ export function EditorApp() {
                  height: height,
                  padding: `${activeProject.settings.padding}px`, 
                  breakAfter: index === activeProject.pages.length - 1 ? 'auto' : 'page',
-                 pageBreakAfter: index === activeProject.pages.length - 1 ? 'auto' : 'always',
-                 boxSizing: 'border-box',
-                 overflow: 'hidden'
+                 boxSizing: 'border-box'
               }}
             >
               <div className="prose prose-sm w-full max-w-none">
