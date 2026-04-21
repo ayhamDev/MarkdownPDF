@@ -7,7 +7,9 @@ import {
   Download, 
   Github, 
   Linkedin, 
-  CheckCircle2 
+  CheckCircle2,
+  Coffee,
+  Heart
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -17,6 +19,19 @@ interface LandingPageProps {
 export function LandingPage({ onStart }: LandingPageProps) {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100 flex flex-col">
+      {/* Header Support */}
+      <div className="absolute top-0 right-0 p-4 md:p-6 z-20">
+        <a 
+          href="https://ko-fi.com/ayhamdev" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-amber-50 text-amber-600 border border-amber-200 rounded-full text-sm font-semibold transition-all shadow-sm shadow-amber-100 hover:shadow-md hover:-translate-y-0.5"
+        >
+          <Coffee className="w-4 h-4" />
+          <span className="hidden sm:inline">Buy me a coffee</span>
+        </a>
+      </div>
+
       {/* 1. Hero Section */}
       <main className="flex-1">
         <section className="relative pt-24 pb-32 overflow-hidden px-6 lg:px-8">
