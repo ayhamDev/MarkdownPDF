@@ -10,6 +10,7 @@ import rehypeKatex from 'rehype-katex';
 import 'highlight.js/styles/vs2015.css';
 import 'katex/dist/katex.min.css';
 import { GoogleGenAI } from '@google/genai';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   UploadCloud,
   Trash2,
@@ -24,7 +25,15 @@ import {
   Wand2,
   Bot,
   Coffee,
-  Heart
+  Heart,
+  ChevronUp,
+  ChevronDown,
+  Moon,
+  Sun,
+  MessageSquare,
+  Send,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
@@ -87,6 +96,20 @@ export interface Page {
   id: string;
   content: string;
   customSettings?: PageSettings; // Each page can have custom overrides
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  content: string;
+  contextPages?: string[]; 
+}
+
+export interface ChatSession {
+  id: string;
+  name: string;
+  updatedAt: number;
+  messages: ChatMessage[];
 }
 
 export interface Project {
@@ -217,16 +240,96 @@ export function EditorApp() {
   const [aiModel, setAiModel] = useLocalStorage<string>('md2pdf_gemini_model', 'gemini-2.5-flash');
   const [aiThinkingLevel, setAiThinkingLevel] = useLocalStorage<string>('md2pdf_gemini_thinking', 'none');
   const [aiMaxTokens, setAiMaxTokens] = useLocalStorage<number>('md2pdf_gemini_tokens', 8192);
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [globalChatSessions, setGlobalChatSessions] = useLocalStorage<Record<string, ChatSession[]>>('md2pdf_chat_sessions_v3', {});
+  const [activeSessionIds, setActiveSessionIds] = useLocalStorage<Record<string, string>>('md2pdf_active_session_ids_v3', {});
+
+  const projectSessions = globalChatSessions[activeProjectId] || [{ id: 'default', name: 'Chat 1', messages: [], updatedAt: Date.now() }];
+  const defaultActiveId = projectSessions[0]?.id || 'default';
+  const activeSessionId = activeSessionIds[activeProjectId] || defaultActiveId;
+
+  const activeSession = projectSessions.find(s => s.id === activeSessionId) || projectSessions[0];
+  const chatHistory = activeSession?.messages || [];
+
+  const updateChatHistory = (action: React.SetStateAction<ChatMessage[]>) => {
+    setGlobalChatSessions(prev => {
+      const curProjectSessions = prev[activeProjectId] || [{ id: 'default', name: 'Chat 1', messages: [], updatedAt: Date.now() }];
+      const sessionIndex = curProjectSessions.findIndex(s => s.id === activeSessionId);
+      if (sessionIndex === -1) return prev;
+      
+      const curMessages = curProjectSessions[sessionIndex].messages;
+      const nextMessages = typeof action === 'function' ? (action as any)(curMessages) : action;
+      
+      const newSessions = [...curProjectSessions];
+      newSessions[sessionIndex] = { ...newSessions[sessionIndex], messages: nextMessages, updatedAt: Date.now() };
+      
+      return { ...prev, [activeProjectId]: newSessions };
+    });
+  };
+
+  const createNewSession = () => {
+      const newId = Date.now().toString();
+      setGlobalChatSessions(prev => {
+          const curProjectSessions = prev[activeProjectId] || [{ id: 'default', name: 'Chat 1', messages: [], updatedAt: Date.now() }];
+          return {
+              ...prev,
+              [activeProjectId]: [...curProjectSessions, { id: newId, name: `Chat ${curProjectSessions.length + 1}`, messages: [], updatedAt: Date.now() }]
+          };
+      });
+      setActiveSessionIds(prev => ({ ...prev, [activeProjectId]: newId }));
+  };
+
+  const switchSession = (sessionId: string) => {
+      setActiveSessionIds(prev => ({ ...prev, [activeProjectId]: sessionId }));
+  };
+
+  const deleteSession = (sessionId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setGlobalChatSessions(prev => {
+          const curProjectSessions = prev[activeProjectId] || [];
+          const newSessions = curProjectSessions.filter(s => s.id !== sessionId);
+          if (newSessions.length === 0) {
+              newSessions.push({ id: 'default', name: 'Chat 1', messages: [], updatedAt: Date.now() });
+          }
+          return { ...prev, [activeProjectId]: newSessions };
+      });
+      if (activeSessionId === sessionId) {
+          setActiveSessionIds(prev => {
+              const next = { ...prev };
+              delete next[activeProjectId];
+              return next;
+          });
+      }
+  };
+  
+  const [chatContextPages, setChatContextPages] = useState<string[]>([]);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiSelection, setAiSelection] = useState<{ text: string, range: any } | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isChatDrawerOpen && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, isChatDrawerOpen]);
   
   const [showCoffeeModal, setShowCoffeeModal] = useState<{ show: boolean, intention: 'export' | 'project' | 'write' | 'manual', pendingFn?: () => void }>({ show: false, intention: 'manual' });
   const [keystrokeCount, setKeystrokeCount] = useState(0);
+  
+  const [isDarkMode, setIsDarkMode] = useLocalStorage<boolean>('md2pdf_dark_mode', false);
 
   const exportContainerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
+
+  // Apply dark mode to document
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   // Fallbacks
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
@@ -364,108 +467,176 @@ export function EditorApp() {
         const selection = ed.getSelection();
         const selectedText = ed.getModel().getValueInRange(selection);
         setAiSelection(selectedText.trim().length > 0 ? { text: selectedText, range: selection } : null);
-        setIsAiModalOpen(true);
+        setIsChatDrawerOpen(true);
       }
     });
   };
 
   const executeAiPrompt = async () => {
-    if (!aiPrompt.trim()) return;
+    const textToSend = aiPrompt.trim();
+    if (!textToSend) return;
     const finalKey = apiKey || process.env.GEMINI_API_KEY;
     if (!finalKey) {
       alert("Please provide a Gemini API Key in Document Settings first.");
-      setIsAiModalOpen(false);
+      setIsChatDrawerOpen(false);
       setIsSettingsOpen(true);
       return;
     }
 
+    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: textToSend, contextPages: chatContextPages.length > 0 ? chatContextPages : [activePageId] };
+    const historyWithUser = [...chatHistory, userMessage];
+    updateChatHistory(historyWithUser);
+    setAiPrompt('');
     setIsAiLoading(true);
+
     try {
       const ai = new GoogleGenAI({ apiKey: finalKey });
-      const fullContext = activePage?.content || '';
       const hasSelection = aiSelection !== null;
-
+      
       let promptStr = `You are an expert AI Markdown copilot inside a document editor.\n\n`;
-      promptStr += `Current Page Content:\n---\n${fullContext}\n---\n\n`;
-      promptStr += `CRITICAL INSTRUCTION: You MUST use rich, stylized markdown formatting (headings, bold, lists, math) where appropriate for text. Handle the user's intent to either update the current text, create entirely new pages, or both.\n\n`;
+      
+      const contextPagesData = activeProject.pages.filter(p => userMessage.contextPages?.includes(p.id));
+      if (contextPagesData.length > 0) {
+        promptStr += `Context Pages:\n`;
+        contextPagesData.forEach((p, idx) => {
+          promptStr += `--- PAGE ID: ${p.id} (Page ${activeProject.pages.findIndex(ap => ap.id === p.id) + 1}) ---\n${p.content}\n\n`;
+        });
+      } else {
+        promptStr += `Current Page Content:\n---\n${activePage?.content || ''}\n---\n\n`;
+      }
+
+      if (historyWithUser.length > 1) {
+        promptStr += `Chat History:\n`;
+        historyWithUser.slice(0, -1).forEach(m => {
+          promptStr += `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}\n`;
+        });
+        promptStr += `\n`;
+      }
+
+      promptStr += `CRITICAL INSTRUCTION: You MUST use rich, stylized markdown formatting (headings, bold, lists, math) where appropriate for text.\n\n`;
+      promptStr += `FORMAT EXPECTATION:
+1. Respond conversationally first, explaining what you are doing.
+2. If your task requires updating an existing page, append an XML block at the end of your message in this format:
+<update_page id="PAGE_ID_HERE">
+(Put the updated content here)
+</update_page>
+3. If your task requires creating a new page, append:
+<new_page>
+(Put the new page content here)
+</new_page>\n\n`;
 
       if (hasSelection) {
-        promptStr += `The user has highlighted the following exact text for editing:\n"${aiSelection.text}"\n\n`;
-        promptStr += `User Request: ${aiPrompt}\n\n`;
-      } else {
-        promptStr += `User Request: ${aiPrompt}\n\n`;
+        promptStr += `The user has highlighted the following exact text for editing on the ACTIVE page (${activePageId}):\n"${aiSelection?.text}"\n\n`;
+        promptStr += `IMPORTANT: Because there is an active text selection, if you output an <update_page id="${activePageId}"> block, its content will ONLY replace the highlighted snippet. Provide JUST the replacement markdown.\n\n`;
       }
+      
+      promptStr += `User Request: ${textToSend}\n\n`;
 
-      const configObj: any = {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: "object",
-          properties: {
-            updatedText: {
-              type: "string",
-              description: hasSelection 
-                ? "The exact string replacement for ONLY the highlighted text. It should dynamically merge seamlessly. If the user didn't ask to modify the existing text at all, echo the highlighted text back identically."
-                : "The exact complete updated markdown for the CURRENT page. If the user only wanted to create new pages and leave this one alone, echo the existing page content."
-            },
-            newPagesToCreate: {
-              type: "array",
-              description: "If the user requested to create new pages, provide the full structured markdown strings for each new page you want to generate.",
-              items: { type: "string" }
-            }
-          },
-          required: ["updatedText", "newPagesToCreate"]
+      const targetModel = aiModel || 'gemini-2.5-flash';
+      const configObj: any = {};
+      
+      // Thinking is only valid for Gemini 3.0+ models.
+      // Gemini 2.x and 1.x models (including 2.0-flash-thinking-exp) will throw 400 Bad Request
+      // if thinkingConfig is provided.
+      const supportsThinkingConfig = targetModel.includes('gemini-3');
+      
+      if (aiThinkingLevel && aiThinkingLevel !== 'none' && supportsThinkingConfig) {
+        if (aiThinkingLevel === 'true') {
+           // For boolean true, default to HIGH or leave it undefined if that's preferred.
+           // Setting thinking: true is invalid schema, so we map it to HIGH.
+           configObj.thinkingConfig = { thinkingLevel: 'HIGH' };
+        } else if (aiThinkingLevel === 'false') {
+           // False maps to MINIMAL for Gemini 3
+           configObj.thinkingConfig = { thinkingLevel: 'MINIMAL' };
+        } else {
+           configObj.thinkingConfig = { thinkingLevel: aiThinkingLevel };
         }
-      };
-
-      if (aiThinkingLevel && aiThinkingLevel !== 'none') {
-        configObj.thinkingConfig = { thinkingLevel: aiThinkingLevel };
       }
+      
       if (aiMaxTokens) {
         configObj.maxOutputTokens = aiMaxTokens;
       }
 
-      const response = await ai.models.generateContent({
-        model: aiModel || 'gemini-2.5-flash',
+      const responseStream = await ai.models.generateContentStream({
+        model: targetModel,
         contents: promptStr,
         config: configObj
       });
 
-      const parsed = JSON.parse(response.text || '{}');
-      let finalContent = fullContext;
-
-      if (hasSelection && editorRef.current && parsed.updatedText) {
-        editorRef.current.executeEdits('ai-assistant', [{
-          range: aiSelection.range,
-          text: parsed.updatedText,
-          forceMoveMarkers: true
-        }]);
-        finalContent = editorRef.current.getValue();
-      } else if (parsed.updatedText) {
-        finalContent = parsed.updatedText;
-      }
-
-      let newPagesList = activeProject.pages.map(p => 
-        p.id === activePageId ? { ...p, content: finalContent } : p
-      );
-
-      if (parsed.newPagesToCreate && parsed.newPagesToCreate.length > 0) {
-        const createdPages = parsed.newPagesToCreate.map((content: string, i: number) => ({ 
-          id: Date.now().toString() + i, 
-          content 
-        }));
-        newPagesList = [...newPagesList, ...createdPages];
+      const assistMsgId = Date.now().toString() + '-ai';
+      updateChatHistory(prev => [...prev, { id: assistMsgId, role: 'model', content: '' }]);
+      setIsAiLoading(false); // Enable chat interaction early
+      
+      let fullResponse = '';
+      for await (const chunk of responseStream) {
+        fullResponse += chunk.text;
         
-        updateActiveProject({ pages: newPagesList });
-        handleSelectPage(createdPages[0].id);
-      } else {
-        updateActiveProject({ pages: newPagesList });
+        // Temporarily strip out any incomplete tags so they don't look ugly while typing
+        const displayResponse = fullResponse
+           .replace(/<update_page[\s\S]*?(<\/update_page>|$)/g, '')
+           .replace(/<new_page>[\s\S]*?(<\/new_page>|$)/g, '')
+           .trim();
+           
+        updateChatHistory(prev => prev.map(m => m.id === assistMsgId ? { ...m, content: displayResponse || "Thinking..." } : m));
       }
 
-      setIsAiModalOpen(false);
-      setAiPrompt('');
+      // Final processing once stream is complete
+      const updateRegex = /<update_page\s+id="([^"]+)">([\s\S]*?)<\/update_page>/g;
+      const newRegex = /<new_page>([\s\S]*?)<\/new_page>/g;
+      
+      let newPagesList = [...activeProject.pages];
+      let didUpdateActivePageSelection = false;
+
+      let match;
+      while ((match = updateRegex.exec(fullResponse)) !== null) {
+          const pageId = match[1];
+          const content = match[2].trim();
+          
+          if (hasSelection && pageId === activePageId && editorRef.current) {
+              editorRef.current.executeEdits('ai-assistant', [{
+                  range: aiSelection!.range,
+                  text: content,
+                  forceMoveMarkers: true
+              }]);
+              const finalContent = editorRef.current.getValue();
+              newPagesList = newPagesList.map(p => p.id === activePageId ? { ...p, content: finalContent } : p);
+              didUpdateActivePageSelection = true;
+          } else {
+              newPagesList = newPagesList.map(p => p.id === pageId ? { ...p, content } : p);
+          }
+      }
+
+      let latestNewPageId = null;
+      while ((match = newRegex.exec(fullResponse)) !== null) {
+          const content = match[1].trim();
+          const newId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+          latestNewPageId = newId;
+          newPagesList.push({ id: newId, content });
+      }
+
+      const finalCleanedResponse = fullResponse
+          .replace(updateRegex, '')
+          .replace(newRegex, '')
+          .trim();
+
+      updateChatHistory(prev => prev.map(m => m.id === assistMsgId ? { ...m, content: finalCleanedResponse } : m));
+      
+      if (JSON.stringify(newPagesList) !== JSON.stringify(activeProject.pages)) {
+          updateActiveProject({ pages: newPagesList });
+          if (latestNewPageId) handleSelectPage(latestNewPageId);
+      }
+      
+      if (!didUpdateActivePageSelection && hasSelection) {
+          setAiSelection(null); 
+      }
+
     } catch (e: any) {
       console.error(e);
-      alert("Error reaching Gemini AI: " + e.message);
+      updateChatHistory(prev => [...prev, {
+        id: Date.now().toString() + '-err',
+        role: 'model',
+        content: `**Error:** ${e.message}`
+      }]);
     } finally {
       setIsAiLoading(false);
     }
@@ -532,6 +703,37 @@ export function EditorApp() {
     const updatedPages = [...activeProject.pages, { id: newId, content: '' }];
     updateActiveProject({ pages: updatedPages });
     handleSelectPage(newId);
+  };
+
+  const addPageAfter = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const index = activeProject.pages.findIndex(p => p.id === id);
+    if (index === -1) return;
+    const newId = Date.now().toString();
+    const updatedPages = [...activeProject.pages];
+    updatedPages.splice(index + 1, 0, { id: newId, content: '' });
+    updateActiveProject({ pages: updatedPages });
+    handleSelectPage(newId);
+  };
+  
+  const movePageUp = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const index = activeProject.pages.findIndex(p => p.id === id);
+    if (index > 0) {
+      const updatedPages = [...activeProject.pages];
+      [updatedPages[index - 1], updatedPages[index]] = [updatedPages[index], updatedPages[index - 1]];
+      updateActiveProject({ pages: updatedPages });
+    }
+  };
+
+  const movePageDown = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const index = activeProject.pages.findIndex(p => p.id === id);
+    if (index < activeProject.pages.length - 1) {
+      const updatedPages = [...activeProject.pages];
+      [updatedPages[index + 1], updatedPages[index]] = [updatedPages[index], updatedPages[index + 1]];
+      updateActiveProject({ pages: updatedPages });
+    }
   };
 
   const deletePage = (id: string, e: React.MouseEvent) => {
@@ -608,14 +810,20 @@ export function EditorApp() {
         font-size: ${activeProject.settings.fontSize}px !important;
         line-height: ${activeProject.settings.lineHeight} !important;
         max-width: none !important;
-        color: ${isDark(activeProject.settings.theme) ? '#f8fafc' : 'inherit'};
+        color: ${isDark(activeProject.settings.theme) ? '#f8fafc' : '#0f172a'} !important;
       }
       .custom-prose-styling .prose h1,
       .custom-prose-styling .prose h2,
       .custom-prose-styling .prose h3,
       .custom-prose-styling .prose h4 {
         font-family: inherit !important;
-        color: ${isDark(activeProject.settings.theme) ? '#fff' : 'inherit'};
+        color: ${isDark(activeProject.settings.theme) ? '#fff' : '#0f172a'} !important;
+      }
+      .custom-prose-styling .prose strong,
+      .custom-prose-styling .prose a,
+      .custom-prose-styling .prose code,
+      .custom-prose-styling .prose blockquote {
+        color: ${isDark(activeProject.settings.theme) ? 'inherit' : '#0f172a'};
       }
       
       @media print {
@@ -676,7 +884,7 @@ export function EditorApp() {
 
   return (
     <div 
-      className="h-screen print:h-auto flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden print:overflow-visible print:block"
+      className="h-screen print:h-auto flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans overflow-hidden print:overflow-visible print:block"
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
       onDrop={handleDrop}
@@ -696,19 +904,19 @@ export function EditorApp() {
       {/* Settings Modal */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm transition-opacity p-4" onClick={() => setIsSettingsOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-blue-600" /> Document Settings
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-600 dark:text-blue-500" /> Document Settings
               </h3>
-              <button onClick={() => setIsSettingsOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200/50 transition-colors">
+              <button onClick={() => setIsSettingsOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
               <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase text-slate-500">Theme</label>
+                <label className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Theme</label>
                 <div className="grid grid-cols-2 gap-2">
                   {Object.keys(THEMES).map((th) => (
                     <button
@@ -716,7 +924,7 @@ export function EditorApp() {
                       onClick={() => updateSettings({ theme: th as Theme })}
                       className={cn(
                         "px-3 py-2 text-sm font-medium rounded-lg border text-left capitalize transition-all",
-                        activeProject.settings.theme === th ? "bg-blue-50 border-blue-600 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                        activeProject.settings.theme === th ? "bg-blue-50 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 text-blue-800 dark:text-blue-300" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
                       )}
                     >
                       {th}
@@ -725,33 +933,33 @@ export function EditorApp() {
                 </div>
               </div>
 
-              <div className="space-y-4 bg-slate-50 p-4 border border-slate-200 rounded-xl">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <label className="text-xs font-semibold uppercase text-slate-500">Typography Tuning</label>
-                  <div className="flex bg-slate-200/50 p-1 rounded-md">
+              <div className="space-y-4 bg-slate-50 dark:bg-slate-800/50 p-4 border border-slate-200 dark:border-slate-700 rounded-xl">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                  <label className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Typography Tuning</label>
+                  <div className="flex bg-slate-200/50 dark:bg-slate-900/50 p-1 rounded-md">
                     <button 
                       onClick={() => setSettingsScope('global')}
-                      className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", settingsScope === 'global' ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                      className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", settingsScope === 'global' ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}
                     >
                       Global
                     </button>
                     <button 
                       onClick={() => setSettingsScope('page')}
-                      className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", settingsScope === 'page' ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                      className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", settingsScope === 'page' ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}
                     >
                       This Page
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 gap-1.5 bg-slate-200/50 p-1 rounded-lg">
+                <div className="grid grid-cols-5 gap-1.5 bg-slate-200/50 dark:bg-slate-900/50 p-1 rounded-lg">
                   {['base', 'h1', 'h2', 'h3', 'p'].map(tag => (
                     <button 
                       key={tag}
                       onClick={() => setSelectedTag(tag as any)}
                       className={cn(
                         "py-1.5 text-xs font-medium rounded text-center transition-all uppercase tracking-wider",
-                        selectedTag === tag ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        selectedTag === tag ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                       )}
                     >
                       {tag}
@@ -761,14 +969,14 @@ export function EditorApp() {
 
                 <div className="space-y-3 pt-2">
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block">Font Family</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 block">Font Family</label>
                     <select 
                       value={getStyleForTag(selectedTag).fontFamily || ''}
                       onChange={(e) => {
                         if (selectedTag === 'base') updateSettings({ fontFamily: e.target.value });
                         else updatePageSettings(selectedTag as ElementTag, { fontFamily: e.target.value });
                       }}
-                      className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white"
+                      className="w-full border-slate-200 dark:border-slate-700 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white dark:bg-slate-900 dark:text-slate-200"
                     >
                       <option value="">Inherit / Default</option>
                       {FONTS.map(f => (
@@ -779,7 +987,7 @@ export function EditorApp() {
                   
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block w-full truncate" title="Size (px)">Size (px)</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 block w-full truncate" title="Size (px)">Size (px)</label>
                       <input 
                         type="number" min="8" max="72" step="1"
                         value={getStyleForTag(selectedTag).fontSize || ''}
@@ -787,12 +995,12 @@ export function EditorApp() {
                           if (selectedTag === 'base') updateSettings({ fontSize: parseInt(e.target.value) || 15 });
                           else updatePageSettings(selectedTag as ElementTag, { fontSize: parseInt(e.target.value) || undefined as any });
                         }}
-                        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm"
+                        className="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-slate-200 rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                         placeholder="Default"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block w-full truncate" title="Height">Height</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 block w-full truncate" title="Height">Height</label>
                       <input 
                         type="number" min="1.0" max="3.0" step="0.1"
                         value={getStyleForTag(selectedTag).lineHeight || ''}
@@ -800,12 +1008,12 @@ export function EditorApp() {
                           if (selectedTag === 'base') updateSettings({ lineHeight: parseFloat(e.target.value) || 1.6 });
                           else updatePageSettings(selectedTag as ElementTag, { lineHeight: parseFloat(e.target.value) || undefined as any });
                         }}
-                        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm"
+                        className="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-slate-200 rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                         placeholder="Default"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block w-full truncate" title="Padding (px)">Padding</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 block w-full truncate" title="Padding (px)">Padding</label>
                       <input 
                         type="number" min="0" max="100" step="2"
                         value={getStyleForTag(selectedTag).padding || ''}
@@ -813,7 +1021,7 @@ export function EditorApp() {
                           if (selectedTag === 'base') updateSettings({ padding: parseInt(e.target.value) || 56 });
                           else updatePageSettings(selectedTag as ElementTag, { padding: parseInt(e.target.value) || undefined as any });
                         }}
-                        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm"
+                        className="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-slate-200 rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                         placeholder="Default"
                       />
                     </div>
@@ -830,7 +1038,7 @@ export function EditorApp() {
                           );
                           updateActiveProject({ pages: updatedPages });
                         }}
-                        className="text-[10px] text-red-500 hover:text-red-700 uppercase font-bold"
+                        className="text-[10px] text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 uppercase font-bold"
                       >
                         Reset Tag
                       </button>
@@ -840,14 +1048,14 @@ export function EditorApp() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase text-slate-500">Layout</label>
+                <label className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Layout</label>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Paper Format</label>
+                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Paper Format</label>
                     <select 
                       value={activeProject.settings.paperFormat}
                       onChange={(e) => updateSettings({ paperFormat: e.target.value as any })}
-                      className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full border-slate-200 dark:border-slate-700 border bg-white dark:bg-slate-900 dark:text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     >
                       <option value="a4">A4 (210 × 297mm)</option>
                       <option value="letter">Letter (8.5 × 11in)</option>
@@ -855,7 +1063,7 @@ export function EditorApp() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Padding ({activeProject.settings.padding}px)</label>
+                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Padding ({activeProject.settings.padding}px)</label>
                     <input 
                       type="range" min="0" max="150" step="4"
                       value={activeProject.settings.padding}
@@ -866,51 +1074,53 @@ export function EditorApp() {
                 </div>
               </div>
 
-              <div className="space-y-3 pb-6 bg-emerald-50/50 p-4 border border-emerald-100 rounded-xl">
-                <label className="text-xs font-semibold uppercase text-slate-700 flex items-center gap-2 border-b border-emerald-200 pb-2">
-                  <Bot className="w-4 h-4 text-emerald-600" /> AI Assistant Configuration
+              <div className="space-y-3 pb-6 bg-emerald-50/50 dark:bg-emerald-900/10 p-4 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
+                <label className="text-xs font-semibold uppercase text-slate-700 dark:text-slate-300 flex items-center gap-2 border-b border-emerald-200 dark:border-emerald-800/30 pb-2">
+                  <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-500" /> AI Assistant Configuration
                 </label>
                 <div className="space-y-3 pt-1">
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">API Key (Stored Locally)</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">API Key (Stored Locally)</label>
                     <input 
                       type="password"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       placeholder="Paste GEMINI_API_KEY here..."
-                      className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 bg-white"
+                      className="w-full border-slate-200 dark:border-slate-700 border bg-white dark:bg-slate-900 dark:text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Model Name</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">Model Name</label>
                     <input 
                       type="text"
                       value={aiModel}
                       onChange={(e) => setAiModel(e.target.value)}
                       placeholder="gemini-2.5-flash"
-                      className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 bg-white font-mono"
+                      className="w-full border-slate-200 dark:border-slate-700 border bg-white dark:bg-slate-900 dark:text-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Thinking Mode</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">Thinking Mode</label>
                       <select 
                         value={aiThinkingLevel}
                         onChange={(e) => setAiThinkingLevel(e.target.value)}
-                        className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 bg-white"
+                        className="w-full border-slate-200 dark:border-slate-700 border bg-white dark:bg-slate-900 dark:text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                       >
                         <option value="none">Disabled</option>
+                        <option value="true">True (Boolean)</option>
+                        <option value="false">False (Boolean)</option>
                         <option value="LOW">Low</option>
                         <option value="HIGH">High</option>
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block" title="Max Output Tokens">Token Budget</label>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block" title="Max Output Tokens">Token Budget</label>
                       <input 
                         type="number" min="100" max="64000" step="100"
                         value={aiMaxTokens || ''}
                         onChange={(e) => setAiMaxTokens(parseInt(e.target.value) || 8192)}
-                        className="w-full border-slate-200 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 bg-white"
+                        className="w-full border-slate-200 dark:border-slate-700 border bg-white dark:bg-slate-900 dark:text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                       />
                     </div>
                   </div>
@@ -919,10 +1129,10 @@ export function EditorApp() {
 
             </div>
             
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-800 flex justify-end">
               <button 
                 onClick={() => setIsSettingsOpen(false)}
-                className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+                className="px-6 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors"
               >
                 Done
               </button>
@@ -931,62 +1141,7 @@ export function EditorApp() {
         </div>
       )}
 
-      {/* AI Prompt Modal */}
-      {isAiModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm transition-opacity p-4" onClick={() => !isAiLoading && setIsAiModalOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-indigo-50/50">
-              <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
-                <Wand2 className="w-5 h-5 text-indigo-600" /> 
-                {aiSelection ? 'Edit Highlighted Text' : 'AI Page Assistant'}
-              </h3>
-              <button disabled={isAiLoading} onClick={() => setIsAiModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200/50 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-6 flex flex-col gap-4">
-              {aiSelection && (
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-sm text-slate-600 font-mono italic max-h-32 overflow-y-auto custom-scrollbar">
-                  "{aiSelection.text}"
-                </div>
-              )}
-              
-              <div className="flex flex-col gap-2">
-                <p className="text-sm text-slate-600 font-medium">
-                  {aiSelection ? 'How should AI modify this text?' : 'What do you want to write or change on this page?'}
-                </p>
-                <textarea
-                  autoFocus
-                  placeholder={aiSelection ? "e.g., 'Make it more professional', 'Summarize this in 3 bullets'" : "e.g., 'Write a comprehensive introduction chapter about quantum physics'"}
-                  className="w-full border-slate-200 border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 resize-none h-24 custom-scrollbar"
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      executeAiPrompt();
-                    }
-                  }}
-                  disabled={isAiLoading}
-                />
-              </div>
-
-              <button
-                onClick={executeAiPrompt}
-                disabled={isAiLoading || !aiPrompt.trim()}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                {isAiLoading ? (
-                  <><RefreshCw className="w-5 h-5 animate-spin" /> Thinking...</>
-                ) : (
-                  <><Wand2 className="w-5 h-5" /> Run AI Assistant</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI Prompt Modal Removed - Using Chat Drawer instead */}
 
       {/* Coffee Support Modal */}
       {showCoffeeModal.show && (
@@ -994,28 +1149,28 @@ export function EditorApp() {
            if (showCoffeeModal.pendingFn) showCoffeeModal.pendingFn();
            setShowCoffeeModal({ show: false, intention: 'manual' });
         }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col text-center" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-amber-50/50 text-left">
-              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                <Coffee className="w-5 h-5 text-amber-600" /> Support the Developer
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col text-center border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-amber-50/50 dark:bg-amber-900/10 text-left">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Coffee className="w-5 h-5 text-amber-600 dark:text-amber-500" /> Support the Developer
               </h3>
               <button 
                 onClick={() => {
                   if (showCoffeeModal.pendingFn) showCoffeeModal.pendingFn();
                   setShowCoffeeModal({ show: false, intention: 'manual' });
                 }} 
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200/50 transition-colors"
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 flex flex-col items-center">
-              <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-amber-600 mb-4 border border-amber-200">
+              <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm flex items-center justify-center text-amber-600 dark:text-amber-500 mb-4 border border-amber-200 dark:border-amber-800/50">
                 <Coffee className="w-8 h-8" />
               </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Enjoying the app?</h3>
-              <p className="text-sm text-slate-600 leading-relaxed px-4 mb-6">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Enjoying the app?</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed px-4 mb-6">
                 If MarkdownToPDF saves you time, please consider buying me a coffee to support continued development and new features!
               </p>
               <div className="w-full flex flex-col gap-3">
@@ -1027,7 +1182,7 @@ export function EditorApp() {
                     if (showCoffeeModal.pendingFn) showCoffeeModal.pendingFn();
                     setShowCoffeeModal({ show: false, intention: 'manual' });
                   }}
-                  className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white rounded-xl font-medium transition-all shadow-md shadow-amber-200 flex items-center justify-center gap-2 text-base"
+                  className="w-full py-3.5 bg-amber-500 dark:bg-amber-600 hover:bg-amber-600 dark:hover:bg-amber-700 active:scale-[0.98] text-white rounded-xl font-medium transition-all shadow-md shadow-amber-200 dark:shadow-none flex items-center justify-center gap-2 text-base"
                 >
                   <Heart className="w-4 h-4" fill="currentColor" /> Buy me a coffee
                 </a>
@@ -1036,7 +1191,7 @@ export function EditorApp() {
                     if (showCoffeeModal.pendingFn) showCoffeeModal.pendingFn();
                     setShowCoffeeModal({ show: false, intention: 'manual' });
                   }}
-                  className="w-full py-2.5 bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 rounded-xl font-medium transition-colors text-sm"
+                  className="w-full py-2.5 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl font-medium transition-colors text-sm"
                 >
                   {showCoffeeModal.intention === 'manual' ? 'Close' : 'No thanks, continue'}
                 </button>
@@ -1047,33 +1202,41 @@ export function EditorApp() {
       )}
 
       {/* Header */}
-      <header className="print:hidden h-14 px-4 sm:px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 w-full relative">
+      <header className="print:hidden h-14 px-4 sm:px-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0 z-10 w-full relative">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsMobileMenuOpen(true)}
-            className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
+            className="lg:hidden p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
           <div className="w-8 h-8 flex items-center justify-center font-bold text-lg bg-blue-600 rounded-lg text-white">
             M
           </div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-800 hidden sm:block">
-            Markdown<span className="text-blue-600">PDF</span>
+          <h1 className="text-lg font-bold tracking-tight text-slate-800 dark:text-slate-100 hidden sm:block">
+            Markdown<span className="text-blue-600 dark:text-blue-400">PDF</span>
           </h1>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setShowCoffeeModal({ show: true, intention: 'manual' })}
-            className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 sm:px-3 py-1.5 rounded-full transition-colors border border-amber-200"
+            className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 px-2 sm:px-3 py-1.5 rounded-full transition-colors border border-amber-200 dark:border-amber-800"
           >
             <Coffee className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Buy me a coffee</span>
           </button>
           
           <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors"
+            title="Toggle Dark Mode"
+          >
+            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+
+          <button
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
+            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors"
             title="Document Settings"
           >
             <Settings className="w-5 h-5" />
@@ -1097,16 +1260,16 @@ export function EditorApp() {
       <main className="print:hidden flex flex-1 overflow-hidden lg:flex-row flex-col">
         
         {/* Mobile View Toggle */}
-        <div className="lg:hidden flex bg-slate-100 p-1.5 shrink-0 border-b border-slate-200 gap-1.5">
+        <div className="lg:hidden flex bg-slate-100 dark:bg-slate-800 p-1.5 shrink-0 border-b border-slate-200 dark:border-slate-700 gap-1.5 z-20 relative">
           <button
             onClick={() => setMobileTab('editor')}
-            className={cn("flex-1 py-1.5 text-sm font-medium rounded-md text-center transition-all", mobileTab === 'editor' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            className={cn("flex-1 py-1.5 text-sm font-medium rounded-md text-center transition-all", mobileTab === 'editor' ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}
           >
             Editor
           </button>
           <button
             onClick={() => setMobileTab('preview')}
-            className={cn("flex-1 py-1.5 text-sm font-medium rounded-md text-center transition-all", mobileTab === 'preview' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            className={cn("flex-1 py-1.5 text-sm font-medium rounded-md text-center transition-all", mobileTab === 'preview' ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}
           >
             Preview
           </button>
@@ -1114,9 +1277,9 @@ export function EditorApp() {
 
         {/* Unified Sidebar for Projects and Pages */}
         {/* Desktop Sidebar */}
-        <aside className="w-full lg:w-64 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 shrink-0 z-10 custom-scrollbar shadow-sm lg:shadow-none hidden lg:flex lg:flex-col">
+        <aside className="w-full lg:w-64 bg-slate-50 dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 shrink-0 z-10 custom-scrollbar shadow-sm lg:shadow-none hidden lg:flex lg:flex-col">
           {/* Projects Section */}
-          <div className="p-3 border-b border-slate-200">
+          <div className="p-3 border-b border-slate-200 dark:border-slate-800">
             <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-2 px-1">Projects Saved Locally</div>
             <div className="flex flex-col gap-1 max-h-40 overflow-y-auto custom-scrollbar">
               {projects.map(p => (
@@ -1126,29 +1289,29 @@ export function EditorApp() {
                   className={cn(
                     "flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors border group",
                     activeProjectId === p.id 
-                      ? "bg-white border-blue-200 shadow-sm ring-1 ring-blue-500/10" 
-                      : "bg-transparent border-transparent hover:bg-slate-200/50"
+                      ? "bg-white dark:bg-slate-800 border-blue-200 dark:border-blue-900 shadow-sm ring-1 ring-blue-500/10 dark:ring-blue-500/20" 
+                      : "bg-transparent border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50"
                   )}
                 >
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <FolderOpen className={cn("w-4 h-4 shrink-0", activeProjectId === p.id ? "text-blue-600" : "text-slate-400")} />
+                  <div className="flex items-center gap-2 overflow-hidden w-full pr-1">
+                    <FolderOpen className={cn("w-4 h-4 shrink-0", activeProjectId === p.id ? "text-blue-600 dark:text-blue-400" : "text-slate-400 dark:text-slate-500")} />
                     {activeProjectId === p.id ? (
                       <input 
                         type="text" 
                         value={p.name}
                         onChange={(e) => updateActiveProject({ name: e.target.value })}
-                        className="bg-transparent border-none outline-none text-sm font-medium w-full text-blue-900 focus:ring-0 p-0"
+                        className="bg-transparent border-none outline-none text-sm font-medium w-full text-blue-900 dark:text-blue-100 focus:ring-0 p-0"
                         onClick={e => e.stopPropagation()}
                       />
                     ) : (
-                      <span className="text-sm font-medium text-slate-600 truncate">{p.name}</span>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-300 truncate">{p.name}</span>
                     )}
                   </div>
                   {projects.length > 1 && (
                     <button 
                       type="button"
                       onClick={(e) => deleteProject(p.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 z-20 relative hover:text-red-500 transition-all rounded"
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 dark:text-slate-500 z-20 relative hover:text-red-500 dark:hover:text-red-400 transition-all rounded"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -1158,7 +1321,7 @@ export function EditorApp() {
             </div>
             <button 
               onClick={createProject}
-              className="mt-2 w-full flex items-center justify-center gap-2 p-1.5 border border-dashed border-slate-300 rounded text-slate-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors text-xs font-medium"
+              className="mt-2 w-full flex items-center justify-center gap-2 p-1.5 border border-dashed border-slate-300 dark:border-slate-700 rounded text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-xs font-medium"
             >
               <Plus className="w-3.5 h-3.5" /> New Project
             </button>
@@ -1171,31 +1334,44 @@ export function EditorApp() {
             </div>
             
             <div className="flex-1 overflow-x-auto lg:overflow-y-auto px-3 pb-3 gap-2 flex lg:flex-col custom-scrollbar">
-              {activeProject.pages.map((p, idx) => (
-                <div 
-                  key={p.id} 
-                  onClick={() => handleSelectPage(p.id)}
-                  className={cn(
-                    "relative group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors border min-w-[120px] lg:min-w-0 shrink-0",
-                    activePageId === p.id 
-                      ? "bg-white border-slate-200 shadow-sm text-slate-900" 
-                      : "bg-transparent border-transparent text-slate-500 hover:bg-slate-200/50"
-                  )}
-                >
-                  <div className="flex items-center gap-2 truncate text-sm">
-                    <FileText className={cn("w-4 h-4 shrink-0", activePageId === p.id ? "text-blue-500" : "text-slate-400")} />
-                    <span className={cn("truncate", activePageId === p.id ? "font-semibold" : "font-medium")}>Page {idx + 1}</span>
-                  </div>
-                  {activeProject.pages.length > 1 && (
-                    <button 
-                      onClick={(e) => deletePage(p.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all rounded hidden lg:block"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
+              <AnimatePresence initial={false}>
+                {activeProject.pages.map((p, idx) => (
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    key={p.id} 
+                    onClick={() => handleSelectPage(p.id)}
+                    className={cn(
+                      "relative group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors border min-w-[120px] lg:min-w-0 shrink-0",
+                      activePageId === p.id 
+                        ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm text-slate-900 dark:text-slate-100" 
+                        : "bg-transparent border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 truncate text-sm">
+                      <FileText className={cn("w-4 h-4 shrink-0", activePageId === p.id ? "text-blue-500" : "text-slate-400")} />
+                      <span className={cn("truncate", activePageId === p.id ? "font-semibold" : "font-medium")}>Page {idx + 1}</span>
+                    </div>
+                    <div className="opacity-0 group-hover:opacity-100 flex items-center absolute right-2 px-1 bg-white dark:bg-slate-800 transition-all rounded gap-0.5">
+                      <button onClick={(e) => addPageAfter(p.id, e)} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors hidden lg:block" title="Add After"><Plus className="w-3.5 h-3.5" /></button>
+                      {idx > 0 && <button onClick={(e) => movePageUp(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded hidden lg:block" title="Move Up"><ChevronUp className="w-3.5 h-3.5" /></button>}
+                      {idx < activeProject.pages.length - 1 && <button onClick={(e) => movePageDown(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded hidden lg:block" title="Move Down"><ChevronDown className="w-3.5 h-3.5" /></button>}
+                      {activeProject.pages.length > 1 && (
+                        <button 
+                          onClick={(e) => deletePage(p.id, e)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded hidden lg:block"
+                          title="Delete Page"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               <button 
                 onClick={addPage}
                 className="lg:mt-1 min-w-[120px] lg:min-w-0 shrink-0 flex items-center justify-center gap-2 p-2.5 border border-dashed border-slate-300 rounded-lg text-slate-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
@@ -1208,9 +1384,9 @@ export function EditorApp() {
         </aside>
 
         {/* Editor Pane */}
-        <section className={cn("w-full lg:w-[45%] xl:w-1/3 flex-col bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shrink-0 z-0 h-full lg:h-auto", mobileTab === 'editor' ? "flex" : "hidden lg:flex")}>
-          <div className="h-10 px-4 bg-slate-50/50 backdrop-blur-md border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0 sticky top-0 z-10 w-full">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Markdown Source</span>
+        <section className={cn("w-full lg:w-[45%] xl:w-1/3 flex-col bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 shrink-0 z-0 h-full lg:h-auto", mobileTab === 'editor' ? "flex" : "hidden lg:flex")}>
+          <div className="h-10 px-4 bg-slate-50/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm shrink-0 sticky top-0 z-10 w-full">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Markdown Source</span>
             <button
               onClick={() => {
                 const ed = editorRef.current;
@@ -1218,19 +1394,19 @@ export function EditorApp() {
                   const selection = ed.getSelection();
                   const selectedText = ed.getModel()?.getValueInRange(selection);
                   setAiSelection(selectedText?.trim().length > 0 ? { text: selectedText, range: selection } : null);
-                  setIsAiModalOpen(true);
+                  setIsChatDrawerOpen(true);
                 }
               }}
-              className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 px-2 py-1 rounded transition-colors"
             >
-              <Wand2 className="w-3.5 h-3.5" /> Ask AI
+              <MessageSquare className="w-3.5 h-3.5" /> AI Chat
             </button>
           </div>
           <div className="flex-1 min-h-0 relative w-full">
             <Editor
               height="100%"
               language="markdown"
-              theme="vs-light"
+              theme={isDarkMode ? 'vs-dark' : 'vs-light'}
               value={editorContent}
               onChange={(value) => handleContentChange(value || '')}
               onMount={handleEditorDidMount}
@@ -1251,62 +1427,242 @@ export function EditorApp() {
         </section>
 
         {/* Live Preview Pane */}
-        <section className={cn("flex-1 flex-col relative bg-slate-100/80", mobileTab === 'preview' ? "flex" : "hidden lg:flex")}>
-          <div className="h-10 px-4 bg-slate-50/50 backdrop-blur-md border-b border-slate-200 flex items-center justify-center shadow-sm shrink-0 sticky top-0 z-10 w-full">
-            <div className="flex items-center gap-3 text-xs text-slate-500 font-medium tracking-wide">
+        <section className={cn("flex-1 flex-col relative bg-slate-100/80 dark:bg-black/50", mobileTab === 'preview' ? "flex" : "hidden lg:flex")}>
+          <div className="h-10 px-4 bg-slate-50/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-sm shrink-0 sticky top-0 z-10 w-full">
+            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
               <span>{activeProject.pages.findIndex(p => p.id === activePageId) + 1} of {activeProject.pages.length} Pages • {activeProject.settings.paperFormat.toUpperCase()}</span>
             </div>
           </div>
           
           <div 
             ref={exportContainerRef}
-            className="flex-1 overflow-auto p-6 lg:p-10 flex flex-col items-center custom-scrollbar gap-10 lg:gap-14 bg-slate-200"
+            className="flex-1 overflow-auto p-6 lg:p-10 flex flex-col items-center custom-scrollbar gap-10 lg:gap-14 bg-slate-200 dark:bg-slate-950"
           >
-            {activeProject.pages.map((p) => (
-              <div 
-                key={p.id}
-                style={{ width: `${d.w * previewScale}px`, height: `${d.h * previewScale}px` }} 
-                className="shrink-0 relative group"
-              >
-                <div 
-                  id={`preview-page-${p.id}`}
-                  onClick={() => handleSelectPage(p.id)}
-                  className={cn(
-                    "pdf-page-render shadow-md bg-clip-padding absolute top-0 left-0 transition-all duration-200 cursor-pointer overflow-hidden custom-prose-styling origin-top-left",
-                    activePageId === p.id && !isGenerating ? "ring-4 ring-blue-500 shadow-xl" : "hover:ring-2 hover:ring-blue-300 opacity-90 hover:opacity-100",
-                    BACKGROUNDS[activeProject.settings.theme].tw
-                  )}
-                  style={{ width: `${d.w}px`, height: `${d.h}px`, transform: `scale(${previewScale})` }}
+            <AnimatePresence initial={false}>
+              {activeProject.pages.map((p) => (
+                <motion.div 
+                  layout
+                  initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                  transition={{ type: "spring", stiffness: 250, damping: 25 }}
+                  key={p.id}
+                  style={{ width: `${d.w * previewScale}px`, height: `${d.h * previewScale}px` }} 
+                  className="shrink-0 relative group"
                 >
                   <div 
-                    className="w-full h-full overflow-hidden"
-                    style={{ padding: `${activeProject.settings.padding}px` }}
+                    id={`preview-page-${p.id}`}
+                    onClick={() => handleSelectPage(p.id)}
+                    className={cn(
+                      "pdf-page-render shadow-md bg-clip-padding absolute top-0 left-0 transition-all duration-200 cursor-pointer overflow-hidden custom-prose-styling origin-top-left",
+                      activePageId === p.id && !isGenerating ? "ring-4 ring-blue-500 shadow-xl" : "hover:ring-2 hover:ring-blue-300 opacity-90 hover:opacity-100",
+                      BACKGROUNDS[activeProject.settings.theme].tw
+                    )}
+                    style={{ width: `${d.w}px`, height: `${d.h}px`, transform: `scale(${previewScale})` }}
                   >
-                    <div className={cn("prose prose-sm", THEMES[activeProject.settings.theme])}>
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
-                        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
-                      >
-                        {processMarkdown(p.content)}
-                      </ReactMarkdown>
+                    <div 
+                      className="w-full h-full overflow-hidden"
+                      style={{ padding: `${activeProject.settings.padding}px` }}
+                    >
+                      <div className={cn("prose prose-sm", THEMES[activeProject.settings.theme])}>
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
+                          rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+                        >
+                          {processMarkdown(p.content)}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         </section>
 
+        {/* Chat Drawer Side Panel */}
+        <AnimatePresence>
+          {isChatDrawerOpen && (
+            <motion.section
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 384, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute right-0 top-0 bottom-0 lg:static flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 z-50 lg:z-20 h-full flex"
+            >
+              <div className="w-80 lg:w-96 min-w-[320px] flex flex-col h-full bg-white dark:bg-slate-900">
+                <div className="h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-indigo-50/50 dark:bg-indigo-900/20">
+                  <div className="flex items-center gap-2 max-w-[60%]">
+                    <Bot className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> 
+                    <div className="relative group/select flex-1 min-w-0">
+                      <select 
+                        value={activeSessionId}
+                        onChange={(e) => switchSession(e.target.value)}
+                        className="w-full bg-transparent appearance-none font-semibold text-indigo-900 dark:text-indigo-100 cursor-pointer pr-6 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 rounded flex-1 truncate"
+                      >
+                        {projectSessions.map(s => (
+                          <option key={s.id} value={s.id} className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
+                            {s.name} ({s.messages.filter(m => m.role === 'user').length})
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-indigo-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={createNewSession} className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-md transition-colors" title="New Chat">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button onClick={(e) => {
+                       if(window.confirm("Clear this chat history?")) {
+                         deleteSession(activeSessionId, e);
+                       }
+                    }} className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-md transition-colors" title="Delete Chat">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setIsChatDrawerOpen(false)} className="p-1.5 text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-md ml-1">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 custom-scrollbar">
+                  {chatHistory.length === 0 && (
+                     <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 p-6 opacity-70">
+                        <MessageSquare className="w-12 h-12 mb-4 text-slate-300 dark:text-slate-700" />
+                        <h4 className="font-medium text-slate-700 dark:text-slate-300 mb-2">How can I help?</h4>
+                        <p className="text-sm">I can rewrite paragraphs, generate new pages, summarize content, or answer questions.</p>
+                     </div>
+                  )}
+
+                  {chatHistory.map(msg => (
+                    <div key={msg.id} className={cn("flex flex-col max-w-[85%]", msg.role === 'user' ? "self-end items-end" : "self-start items-start")}>
+                      <div className={cn(
+                        "p-3 rounded-2xl text-sm", 
+                        msg.role === 'user' 
+                          ? "bg-indigo-600 text-white rounded-tr-sm" 
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-200 dark:border-slate-700"
+                        )}
+                      >
+                         <div className="prose prose-sm prose-invert max-w-none">
+                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                             {msg.content}
+                           </ReactMarkdown>
+                         </div>
+                      </div>
+                      {msg.role === 'user' && msg.contextPages && msg.contextPages.length > 0 && (
+                        <span className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-wider">
+                          Context: {msg.contextPages.length} Pages {aiSelection ? "+ Selection" : ""}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  
+                  {isAiLoading && (
+                    <div className="self-start max-w-[85%] p-3 rounded-2xl rounded-tl-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                      <RefreshCw className="w-4 h-4 animate-spin" /> Thinking...
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col gap-2 shrink-0">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-semibold text-slate-500">Context</span>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => {
+                          if (editorRef.current) {
+                            const sel = editorRef.current.getSelection();
+                            const text = editorRef.current.getModel().getValueInRange(sel);
+                            if (text.trim()) setAiSelection({ text, range: sel });
+                          }
+                        }}
+                        className="text-[10px] uppercase font-bold text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" /> Get Selection
+                      </button>
+                      <button 
+                        onClick={() => setChatContextPages(chatContextPages.length === activeProject.pages.length ? [] : activeProject.pages.map(p => p.id))} 
+                        className="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400"
+                      >
+                        {chatContextPages.length === activeProject.pages.length ? "Deselect All Pages" : "Select All Pages"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                    {activeProject.pages.map((p, idx) => {
+                      const isSelected = chatContextPages.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            if (isSelected) setChatContextPages(chatContextPages.filter(id => id !== p.id));
+                            else setChatContextPages([...chatContextPages, p.id]);
+                          }}
+                          className={cn(
+                            "shrink-0 flex items-center gap-1.5 px-2 py-1 rounded border text-xs font-medium transition-colors",
+                            isSelected 
+                              ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300"
+                              : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          )}
+                        >
+                           {isSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                           P{idx + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {aiSelection && (
+                    <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 px-3 py-2 rounded-lg border border-indigo-100 dark:border-indigo-800/50 relative group mx-1">
+                      <span className="text-[11px] text-indigo-700 dark:text-indigo-300 truncate pr-6 italic font-mono flex-1">
+                        "{aiSelection.text}"
+                      </span>
+                      <button onClick={() => setAiSelection(null)} className="absolute right-2 p-1 text-indigo-400 hover:text-indigo-600 rounded">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-end gap-2 mt-1">
+                    <textarea
+                      placeholder="Ask AI to modify pages, write new ones, etc."
+                      className="flex-1 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none max-h-32 min-h-[44px]"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          executeAiPrompt();
+                        }
+                      }}
+                      disabled={isAiLoading}
+                      rows={1}
+                    />
+                    <button
+                      onClick={executeAiPrompt}
+                      disabled={isAiLoading || !aiPrompt.trim()}
+                      className="p-3 shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-[200] flex lg:hidden">
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-          <aside className="relative w-4/5 max-w-sm bg-slate-50 h-full shadow-2xl flex flex-col animate-in slide-in-from-left-full duration-200">
-            <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
-              <span className="font-semibold text-slate-800">Menu</span>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md">
+          <aside className="relative w-4/5 max-w-sm bg-slate-50 dark:bg-slate-900 h-full shadow-2xl flex flex-col animate-in slide-in-from-left-full duration-200">
+            <div className="h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-800">
+              <span className="font-semibold text-slate-800 dark:text-slate-100">Menu</span>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1324,22 +1680,22 @@ export function EditorApp() {
                       className={cn(
                         "flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors border group",
                         activeProjectId === p.id 
-                          ? "bg-white border-blue-200 shadow-sm ring-1 ring-blue-500/10" 
-                          : "bg-transparent border-transparent hover:bg-slate-200/50"
+                          ? "bg-white dark:bg-slate-800 border-blue-200 dark:border-blue-800 shadow-sm ring-1 ring-blue-500/10" 
+                          : "bg-transparent border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50"
                       )}
                     >
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <FolderOpen className={cn("w-4 h-4 shrink-0", activeProjectId === p.id ? "text-blue-600" : "text-slate-400")} />
+                        <FolderOpen className={cn("w-4 h-4 shrink-0", activeProjectId === p.id ? "text-blue-600 dark:text-blue-400" : "text-slate-400")} />
                         {activeProjectId === p.id ? (
                           <input 
                             type="text" 
                             value={p.name}
                             onChange={(e) => updateActiveProject({ name: e.target.value })}
-                            className="bg-transparent border-none outline-none text-sm font-medium w-full text-blue-900 focus:ring-0 p-0"
+                            className="bg-transparent border-none outline-none text-sm font-medium w-full text-blue-900 dark:text-blue-100 focus:ring-0 p-0"
                             onClick={e => e.stopPropagation()}
                           />
                         ) : (
-                          <span className="text-sm font-medium text-slate-600 truncate">{p.name}</span>
+                          <span className="text-sm font-medium text-slate-600 dark:text-slate-300 truncate">{p.name}</span>
                         )}
                       </div>
                       {projects.length > 1 && (
@@ -1376,22 +1732,27 @@ export function EditorApp() {
                       className={cn(
                         "relative group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors border shrink-0",
                         activePageId === p.id 
-                          ? "bg-white border-slate-200 shadow-sm text-slate-900" 
-                          : "bg-transparent border-transparent text-slate-500 hover:bg-slate-200/50"
+                          ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm text-slate-900 dark:text-slate-100" 
+                          : "bg-transparent border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50"
                       )}
                     >
                       <div className="flex items-center gap-2 truncate text-sm">
                         <FileText className={cn("w-4 h-4 shrink-0", activePageId === p.id ? "text-blue-500" : "text-slate-400")} />
                         <span className={cn("truncate", activePageId === p.id ? "font-semibold" : "font-medium")}>Page {idx + 1}</span>
                       </div>
-                      {activeProject.pages.length > 1 && (
-                        <button 
-                          onClick={(e) => deletePage(p.id, e)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all rounded"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 px-1 bg-white dark:bg-slate-800 rounded">
+                        <button onClick={(e) => addPageAfter(p.id, e)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded"><Plus className="w-3.5 h-3.5" /></button>
+                        {idx > 0 && <button onClick={(e) => movePageUp(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded"><ChevronUp className="w-3.5 h-3.5" /></button>}
+                        {idx < activeProject.pages.length - 1 && <button onClick={(e) => movePageDown(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded"><ChevronDown className="w-3.5 h-3.5" /></button>}
+                        {activeProject.pages.length > 1 && (
+                          <button 
+                            onClick={(e) => deletePage(p.id, e)}
+                            className="p-1.5 text-slate-400 hover:text-red-500 transition-all rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                   <button 
