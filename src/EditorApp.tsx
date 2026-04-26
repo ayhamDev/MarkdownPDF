@@ -418,7 +418,7 @@ export function EditorApp() {
       };
     }
     const globalTypo = activeProject.settings.typography?.[tag];
-    let pageTypo = undefined;
+    let pageTypo: ElementStyle | undefined = undefined;
     if (settingsScope === 'page') {
       pageTypo = activePage?.customSettings?.typography?.[tag];
     }
@@ -606,7 +606,7 @@ export function EditorApp() {
           }
       }
 
-      let latestNewPageId = null;
+      let latestNewPageId: string | null = null;
       while ((match = newRegex.exec(fullResponse)) !== null) {
           const content = match[1].trim();
           const newId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
@@ -821,7 +821,7 @@ export function EditorApp() {
       }
       .custom-prose-styling .prose strong,
       .custom-prose-styling .prose a,
-      .custom-prose-styling .prose code,
+      .custom-prose-styling .prose :not(pre) > code,
       .custom-prose-styling .prose blockquote {
         color: ${isDark(activeProject.settings.theme) ? 'inherit' : '#0f172a'};
       }
