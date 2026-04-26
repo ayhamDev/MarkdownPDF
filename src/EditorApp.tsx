@@ -224,6 +224,16 @@ export function EditorApp() {
 
   const [activeProjectId, setActiveProjectId] = useLocalStorage<string>('md2pdf_active_prj', 'default');
   const [activePageId, setActivePageId] = useState<string>('');
+  const activeProjectIdRef = useRef(activeProjectId);
+  const activePageIdRef = useRef(activePageId);
+
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    activePageIdRef.current = activePageId;
+  }, [activePageId]);
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -468,6 +478,62 @@ export function EditorApp() {
         const selectedText = ed.getModel().getValueInRange(selection);
         setAiSelection(selectedText.trim().length > 0 ? { text: selectedText, range: selection } : null);
         setIsChatDrawerOpen(true);
+      }
+    });
+
+    editor.addAction({
+      id: 'extract-page-prev',
+      label: '📄 Extract to New Page (Before)',
+      contextMenuGroupId: 'navigation',
+      run: (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel().getValueInRange(selection);
+        if (!selectedText.trim()) return;
+        ed.executeEdits('extract-page', [{ range: selection, text: '' }]);
+        const newId = Date.now().toString();
+        setTimeout(() => {
+          setProjects(prevProjects => {
+             const projId = activeProjectIdRef.current;
+             const pageId = activePageIdRef.current;
+             return prevProjects.map(p => {
+               if (p.id !== projId) return p;
+               const pIndex = p.pages.findIndex(px => px.id === pageId);
+               if (pIndex === -1) return p;
+               const newPages = [...p.pages];
+               newPages.splice(pIndex, 0, { id: newId, content: selectedText });
+               return { ...p, pages: newPages, updatedAt: Date.now() };
+             });
+          });
+          setActivePageId(newId);
+        }, 0);
+      }
+    });
+
+    editor.addAction({
+      id: 'extract-page-next',
+      label: '📄 Extract to New Page (After)',
+      contextMenuGroupId: 'navigation',
+      run: (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel().getValueInRange(selection);
+        if (!selectedText.trim()) return;
+        ed.executeEdits('extract-page', [{ range: selection, text: '' }]);
+        const newId = Date.now().toString();
+        setTimeout(() => {
+          setProjects(prevProjects => {
+             const projId = activeProjectIdRef.current;
+             const pageId = activePageIdRef.current;
+             return prevProjects.map(p => {
+               if (p.id !== projId) return p;
+               const pIndex = p.pages.findIndex(px => px.id === pageId);
+               if (pIndex === -1) return p;
+               const newPages = [...p.pages];
+               newPages.splice(pIndex + 1, 0, { id: newId, content: selectedText });
+               return { ...p, pages: newPages, updatedAt: Date.now() };
+             });
+          });
+          setActivePageId(newId);
+        }, 0);
       }
     });
   };
