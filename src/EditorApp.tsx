@@ -846,6 +846,10 @@ export function EditorApp() {
   const downloadPDF = async () => {
     const executeExport = () => {
       setIsGenerating(true);
+      const originalTitle = document.title;
+      // Set the document title to the project name so the PDF defaults to it
+      document.title = activeProject.name || 'document';
+      
       // Give state a moment to clear interactive borders, then pop native print OS dialog
       setTimeout(() => {
         try {
@@ -853,6 +857,7 @@ export function EditorApp() {
         } catch (e) {
           console.error("Print restricted:", e);
         } finally {
+          document.title = originalTitle;
           setIsGenerating(false);
         }
       }, 400);
