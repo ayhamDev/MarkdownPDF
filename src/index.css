@@ -21,7 +21,6 @@
     margin: 0 !important;
     padding: 0 !important;
     overflow: visible !important;
-    background-color: white !important;
   }
   
   body {
@@ -39,7 +38,6 @@
 
   .print-page {
     margin: 0 !important;
-    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     overflow: hidden !important;

@@ -1779,9 +1779,11 @@ export function EditorApp() {
           return (
             <div 
               key={p.id} 
+              id={`print-page-${p.id}`}
               className={cn(
                  "print-page",
-                 THEMES[activeProject.settings.theme]
+                 "custom-prose-styling",
+                 BACKGROUNDS[activeProject.settings.theme].tw
               )}
               style={{ 
                  width: width,
@@ -1791,7 +1793,7 @@ export function EditorApp() {
                  boxSizing: 'border-box'
               }}
             >
-              <div className="prose prose-sm w-full max-w-none">
+              <div className={cn("prose prose-sm w-full max-w-none h-full", THEMES[activeProject.settings.theme])}>
                 <ReactMarkdown 
                    remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
                    rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
