@@ -11,6 +11,7 @@ import 'highlight.js/styles/vs2015.css';
 import 'katex/dist/katex.min.css';
 import { GoogleGenAI } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
+import { ChartRenderer } from './ChartRenderer';
 import {
   UploadCloud,
   Trash2,
@@ -33,7 +34,8 @@ import {
   MessageSquare,
   Send,
   CheckSquare,
-  Square
+  Square,
+  Copy
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
@@ -837,6 +839,17 @@ export function EditorApp() {
     }
   };
 
+  const copyPageContent = (pageContent: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(pageContent);
+    // Could add a toast notification here
+  };
+
+  const copyAllPagesContent = () => {
+    const combinedContent = activeProject.pages.map(p => p.content).join('\n\n---\n\n');
+    navigator.clipboard.writeText(combinedContent);
+  };
+
   // Pre-process markdown for highlighting (==highlight== -> <mark>highlight</mark>)
   const processMarkdown = (text: string) => {
     return text.replace(/==([^=]+)==/g, '<mark>$1</mark>');
@@ -951,6 +964,18 @@ export function EditorApp() {
     });
 
     return css;
+  };
+
+  // Shared markdown components
+  const markdownComponents = {
+    code(props: any) {
+      const { children, className, node, ...rest } = props;
+      const match = /language-(\w+)/.exec(className || '');
+      if (match && match[1] === 'chart') {
+        return <ChartRenderer code={String(children).replace(/\n$/, '')} />;
+      }
+      return <code {...rest} className={className}>{children}</code>;
+    }
   };
 
   return (
@@ -1316,6 +1341,15 @@ export function EditorApp() {
           <div className="h-6 w-[1px] bg-slate-200 hidden sm:block mx-1"></div>
           
           <button
+            onClick={copyAllPagesContent}
+            className="px-3 py-1.5 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 font-medium text-sm rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-2"
+            title="Copy All MD Source"
+          >
+            <Copy className="w-4 h-4" />
+            <span className="hidden sm:inline">Copy All</span>
+          </button>
+          
+          <button
             onClick={downloadPDF}
             disabled={isGenerating}
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
@@ -1427,6 +1461,7 @@ export function EditorApp() {
                       <span className={cn("truncate", activePageId === p.id ? "font-semibold" : "font-medium")}>Page {idx + 1}</span>
                     </div>
                     <div className="opacity-0 group-hover:opacity-100 flex items-center absolute right-2 px-1 bg-white dark:bg-slate-800 transition-all rounded gap-0.5">
+                      <button onClick={(e) => copyPageContent(p.content, e)} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors hidden lg:block" title="Copy MD Source"><Copy className="w-3.5 h-3.5" /></button>
                       <button onClick={(e) => addPageAfter(p.id, e)} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors hidden lg:block" title="Add After"><Plus className="w-3.5 h-3.5" /></button>
                       {idx > 0 && <button onClick={(e) => movePageUp(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded hidden lg:block" title="Move Up"><ChevronUp className="w-3.5 h-3.5" /></button>}
                       {idx < activeProject.pages.length - 1 && <button onClick={(e) => movePageDown(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded hidden lg:block" title="Move Down"><ChevronDown className="w-3.5 h-3.5" /></button>}
@@ -1539,6 +1574,7 @@ export function EditorApp() {
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
                           rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+                          components={markdownComponents}
                         >
                           {processMarkdown(p.content)}
                         </ReactMarkdown>
@@ -1812,6 +1848,7 @@ export function EditorApp() {
                         <span className={cn("truncate", activePageId === p.id ? "font-semibold" : "font-medium")}>Page {idx + 1}</span>
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 px-1 bg-white dark:bg-slate-800 rounded">
+                        <button onClick={(e) => copyPageContent(p.content, e)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded"><Copy className="w-3.5 h-3.5" /></button>
                         <button onClick={(e) => addPageAfter(p.id, e)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded"><Plus className="w-3.5 h-3.5" /></button>
                         {idx > 0 && <button onClick={(e) => movePageUp(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded"><ChevronUp className="w-3.5 h-3.5" /></button>}
                         {idx < activeProject.pages.length - 1 && <button onClick={(e) => movePageDown(p.id, e)} className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded"><ChevronDown className="w-3.5 h-3.5" /></button>}
@@ -1868,6 +1905,7 @@ export function EditorApp() {
                 <ReactMarkdown 
                    remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
                    rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
+                   components={markdownComponents}
                 >
                   {processMarkdown(p.content)}
                 </ReactMarkdown>
