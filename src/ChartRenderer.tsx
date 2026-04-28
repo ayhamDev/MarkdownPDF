@@ -93,7 +93,7 @@ export const ChartRenderer: React.FC<{ code: string }> = ({ code }) => {
 
   return (
     <div className="w-full h-64 my-6 bg-white dark:bg-slate-900 rounded-lg p-4 border border-slate-200 dark:border-slate-700 shadow-sm print:break-inside-avoid">
-      <ResponsiveContainer width={100} height="100%">
+      <ResponsiveContainer width="100%" height="100%">
         {renderChart()}
       </ResponsiveContainer>
     </div>

@@ -975,6 +975,15 @@ export function EditorApp() {
         return <ChartRenderer code={String(children).replace(/\n$/, '')} />;
       }
       return <code {...rest} className={className}>{children}</code>;
+    },
+    pre(props: any) {
+      if (props.children && React.isValidElement(props.children)) {
+        const childProps: any = props.children.props;
+        if (childProps?.className?.includes('language-chart')) {
+          return <div className="not-prose my-6">{props.children}</div>;
+        }
+      }
+      return <pre {...props}>{props.children}</pre>;
     }
   };
 
