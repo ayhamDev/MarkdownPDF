@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
   ArrowRight, 
@@ -10,25 +10,72 @@ import {
   CheckCircle2,
   Coffee,
   Heart,
-  Sparkles
+  Sparkles,
+  Star
 } from 'lucide-react';
 
 import { Link } from '@tanstack/react-router';
+import { Helmet } from 'react-helmet-async';
+import { Logo } from './components/Logo';
 
 export function LandingPage() {
+  const [stars, setStars] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch('https://api.github.com/repos/ayhamDev/MarkdownPDF')
+      .then(res => res.json())
+      .then(data => {
+        if (data.stargazers_count !== undefined) {
+          setStars(data.stargazers_count);
+        }
+      })
+      .catch(err => console.error('Failed to fetch github stars', err));
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100 flex flex-col">
-      {/* Header Support */}
-      <div className="absolute top-0 right-0 p-4 md:p-6 z-20">
-        <a 
-          href="https://ko-fi.com/ayhamdev" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-amber-50 text-amber-600 border border-amber-200 rounded-full text-sm font-semibold transition-all shadow-sm shadow-amber-100 hover:shadow-md hover:-translate-y-0.5"
-        >
-          <Coffee className="w-4 h-4" />
-          <span className="hidden sm:inline">Buy me a coffee</span>
-        </a>
+      <Helmet>
+        <title>MarkdownPDF | Browser-Native Markdown to PDF</title>
+        <meta name="description" content="A blazingly fast, privacy-first markdown renderer. Write with AI assistance and export directly to flawless vector PDFs in your browser." />
+        <link rel="canonical" href="https://markdownpdf.pages.dev/" />
+        <meta property="og:title" content="MarkdownPDF | Beautiful Markdown to PDF Converter" />
+        <meta property="og:description" content="A blazingly fast, browser-native markdown renderer. Write with AI and export to vector PDFs." />
+      </Helmet>
+
+      {/* Navigation Layer */}
+      <div className="absolute top-0 inset-x-0 p-4 md:p-6 z-20 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Logo className="w-8 h-8" />
+          <span className="text-xl font-bold tracking-tight text-slate-800">
+            Markdown<span className="text-blue-600">PDF</span>
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <a 
+            href="https://github.com/ayhamDev/MarkdownPDF" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-full text-sm font-medium transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
+          >
+            <Github className="w-4 h-4" />
+            <span className="hidden sm:inline">Star on GitHub</span>
+            {stars !== null && (
+              <div className="flex items-center gap-1 bg-white/20 px-1.5 py-0.5 rounded text-xs ml-1 font-semibold">
+                 <Star className="w-3 h-3 fill-current text-yellow-300" /> {stars}
+              </div>
+            )}
+          </a>
+          <a 
+            href="https://ko-fi.com/ayhamdev" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-amber-50 text-amber-600 border border-amber-200 rounded-full text-sm font-semibold transition-all shadow-sm shadow-amber-100 hover:shadow-md hover:-translate-y-0.5"
+          >
+            <Coffee className="w-4 h-4" />
+            <span className="hidden sm:inline">Buy me a coffee</span>
+          </a>
+        </div>
       </div>
 
       {/* 1. Hero Section */}

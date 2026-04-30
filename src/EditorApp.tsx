@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
 import remarkGfm from 'remark-gfm';
@@ -35,9 +36,12 @@ import {
   Send,
   CheckSquare,
   Square,
-  Copy
+  Copy,
+  Download,
+  Upload
 } from 'lucide-react';
 import { cn } from './lib/utils';
+import { Logo } from './components/Logo';
 
 // --- Local Hook ---
 function useLocalStorage<T>(key: string, initialValue: T) {
@@ -240,6 +244,27 @@ export function EditorApp() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    }
+    
+    if (isExportMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isExportMenuOpen]);
+
   const [settingsScope, setSettingsScope] = useState<'global' | 'page'>('global');
   const [selectedTag, setSelectedTag] = useState<ElementTag | 'base'>('base');
   
@@ -884,6 +909,57 @@ export function EditorApp() {
     }
   };
 
+  const exportMarkdown = () => {
+    const combinedContent = activeProject.pages.map(p => p.content).join('\n\n---\n\n');
+    const blob = new Blob([combinedContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeProject.name || 'document'}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportProject = () => {
+    const data = JSON.stringify(activeProject, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeProject.name || 'project'}.mdpdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const project = JSON.parse(content);
+        if (project && project.id && project.pages) {
+          const updatedProjects = [project, ...projects.filter(p => p.id !== project.id)];
+          setProjects(updatedProjects);
+          setActiveProjectId(project.id);
+        } else {
+          alert('Invalid project file format.');
+        }
+      } catch (err) {
+        console.error('Failed to parse project file', err);
+        alert('Failed to parse project file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
+  };
+
   const isDark = (theme: Theme) => DARK_THEMES.includes(theme);
 
   // Generate the dynamic CSS mapping for everything, including Page Overrides
@@ -994,6 +1070,11 @@ export function EditorApp() {
       onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
       onDrop={handleDrop}
     >
+      <Helmet>
+        <title>{activeProject.name ? `${activeProject.name} - MarkdownPDF Editor` : "MarkdownPDF Editor"}</title>
+        <meta name="description" content="Edit, style, and generate PDFs from your markdown documents instantly." />
+        <link rel="canonical" href="https://markdownpdf.pages.dev/editor" />
+      </Helmet>
       <style>{generateStyles()}</style>
 
       {/* Fixed Overlays */}
@@ -1307,7 +1388,7 @@ export function EditorApp() {
       )}
 
       {/* Header */}
-      <header className="print:hidden h-14 px-4 sm:px-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0 z-10 w-full relative">
+      <header className="print:hidden h-14 px-4 sm:px-6 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0 z-30 w-full relative">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsMobileMenuOpen(true)}
@@ -1315,9 +1396,7 @@ export function EditorApp() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="w-8 h-8 flex items-center justify-center font-bold text-lg bg-blue-600 rounded-lg text-white">
-            M
-          </div>
+          <Logo className="w-8 h-8" />
           <h1 className="text-lg font-bold tracking-tight text-slate-800 dark:text-slate-100 hidden sm:block">
             Markdown<span className="text-blue-600 dark:text-blue-400">PDF</span>
           </h1>
@@ -1349,24 +1428,51 @@ export function EditorApp() {
           
           <div className="h-6 w-[1px] bg-slate-200 hidden sm:block mx-1"></div>
           
-          <button
-            onClick={copyAllPagesContent}
-            className="px-3 py-1.5 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 font-medium text-sm rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-2"
-            title="Copy All MD Source"
-          >
-            <Copy className="w-4 h-4" />
-            <span className="hidden sm:inline">Copy All</span>
-          </button>
-          
-          <button
-            onClick={downloadPDF}
-            disabled={isGenerating}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
-            title="Generate Native PDF"
-          >
-            {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-            {isGenerating ? 'Prepping...' : 'Export PDF'}
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+              disabled={isGenerating}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-70 flex items-center gap-2"
+              title="Export and Import"
+            >
+              {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span className="hidden sm:inline">File</span>
+              <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-70" />
+            </button>
+            
+            {isExportMenuOpen && (
+              <div 
+                className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50 text-sm overflow-hidden"
+              >
+                <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Export</div>
+                <button
+                  onClick={() => { downloadPDF(); setIsExportMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                >
+                  <Printer className="w-4 h-4 text-slate-400" /> PDF Document
+                </button>
+                <button
+                  onClick={() => { exportMarkdown(); setIsExportMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                >
+                  <FileText className="w-4 h-4 text-slate-400" /> Markdown (.md)
+                </button>
+                <button
+                  onClick={() => { exportProject(); setIsExportMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                >
+                  <Download className="w-4 h-4 text-slate-400" /> Project (.mdpdf)
+                </button>
+                
+                <div className="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+                <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Import</div>
+                <label className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer transition-colors m-0">
+                  <Upload className="w-4 h-4 text-slate-400" /> Open Project
+                  <input type="file" accept=".mdpdf,.json" className="hidden" onChange={(e) => { handleImportProject(e); setIsExportMenuOpen(false); }} />
+                </label>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
